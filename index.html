@@ -67,6 +67,7 @@ body {
   padding: 14px 18px; border-radius: 12px; border: 0; cursor: pointer;
   background: var(--hero); color: var(--void);
 }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid #2c3366; }
 .btn:focus-visible, .pick:focus-visible, #pauseBtn:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 .picks { display: grid; gap: 10px; }
 .pick {
@@ -114,6 +115,7 @@ body {
       <b>Phone</b><span>Touch and drag anywhere to steer</span>
       <b>Keyboard</b><span>WASD or arrow keys, P to pause</span>
     </div>
+    <button class="btn" id="continueBtn" hidden>Continue</button>
     <button class="btn" id="startBtn">Start run</button>
     <p id="bestTxt"></p>
   </div>
@@ -130,7 +132,9 @@ body {
 <div class="overlay" id="pauseScreen" hidden>
   <div class="card">
     <h2>Paused</h2>
+    <p>Your run is saved at the start of each stage. If you quit, you continue from there.</p>
     <button class="btn" id="resumeBtn">Resume</button>
+    <button class="btn ghost" id="quitBtn">Quit to menu</button>
   </div>
 </div>
 
@@ -191,9 +195,29 @@ const block = e => e.preventDefault();
 document.addEventListener('selectstart', block);
 document.addEventListener('dblclick', block, { passive: false });
 
+// ---------- Save file ----------
+// One autosave slot in localStorage, written at each stage start and when the upgrade screen opens.
+// Bump SAVE_VERSION if the saved shape changes so old saves are ignored instead of breaking a run.
+const SAVE_KEY = 'swarm-save', SAVE_VERSION = 1;
+const SAVED_STATS = ['hp', 'maxHp', 'speed', 'fireRate', 'dmg', 'bulletSpeed', 'shots', 'pierce', 'orbit', 'nova', 'magnet', 'regen'];
+function saveRun(atUpgrade) {
+  const p = {};
+  for (const k of SAVED_STATS) p[k] = S.p[k];
+  store(SAVE_KEY, JSON.stringify({ v: SAVE_VERSION, stage: S.stage, kills: S.kills, score: S.score, up: S.up, p, atUpgrade: !!atUpgrade, at: Date.now() }));
+}
+function loadSave() {
+  try {
+    const d = JSON.parse(store(SAVE_KEY) || 'null');
+    if (!d || d.v !== SAVE_VERSION || !Number.isInteger(d.stage) || d.stage < 1 || !d.p) return null;
+    for (const k of SAVED_STATS) if (!Number.isFinite(d.p[k])) return null;
+    return d;
+  } catch (e) { return null; }
+}
+function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
+
 // ---------- State ----------
 let S;
-function newRun() {
+function newRun(save) {
   S = {
     state: 'play', t: 0, stage: 1, kills: 0, stageKills: 0, score: 0,
     shake: 0, spawnTimer: 0, bossAlive: false,
@@ -203,6 +227,12 @@ function newRun() {
     enemies: [], bullets: [], ebullets: [], particles: [], pickups: [], rings: [], texts: [],
     up: {}
   };
+  if (save) {
+    S.stage = save.stage; S.kills = save.kills || 0; S.score = save.score || 0;
+    Object.assign(S.up, save.up);
+    for (const k of SAVED_STATS) S.p[k] = save.p[k];
+    if (save.atUpgrade) { updateHud(); offerUpgrades(); return; }
+  }
   startStage();
 }
 function isBossStage(n) { return n % 5 === 0; }
@@ -216,6 +246,7 @@ function startStage() {
     S.bossTimer = 1.2;
   } else showBanner('Stage ' + S.stage);
   updateHud();
+  saveRun(false);
 }
 let bannerTO;
 function showBanner(txt) {
@@ -299,6 +330,7 @@ const UPGRADES = [
 ];
 function offerUpgrades() {
   S.state = 'upgrade';
+  saveRun(true);
   const pool = UPGRADES.filter(u => !u.max || (S.up[u.id] || 0) < u.max);
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const box = $('picks'); box.innerHTML = '';
@@ -806,6 +838,7 @@ function updateHud() {
 
 function gameOver() {
   S.state = 'over';
+  clearSave();
   const best = parseInt(store('swarm-best') || '0', 10);
   const isBest = S.score > best;
   if (isBest) store('swarm-best', String(S.score));
@@ -838,16 +871,30 @@ function drawIdle(t) {
 }
 requestAnimationFrame(frame);
 
-function begin() {
+function begin(save) {
   ['startScreen', 'overScreen', 'upgradeScreen', 'pauseScreen'].forEach(id => $(id).hidden = true);
-  newRun();
+  stick.active = false; stick.id = null;
+  newRun(save);
 }
-$('startBtn').onclick = begin;
-$('againBtn').onclick = begin;
+function showMenu() {
+  S = null;
+  ['overScreen', 'upgradeScreen', 'pauseScreen'].forEach(id => $(id).hidden = true);
+  const save = loadSave(), best = parseInt(store('swarm-best') || '0', 10);
+  $('continueBtn').hidden = !save;
+  if (save) $('continueBtn').textContent = 'Continue · Stage ' + save.stage + (save.atUpgrade ? ' cleared' : '');
+  $('startBtn').textContent = save ? 'New run' : 'Start run';
+  $('startBtn').classList.toggle('ghost', !!save);
+  $('bestTxt').textContent = best ? 'Best score: ' + best.toLocaleString() : '';
+  $('startScreen').hidden = false;
+  $(save ? 'continueBtn' : 'startBtn').focus({ preventScroll: true });
+}
+$('continueBtn').onclick = () => { const save = loadSave(); if (save) begin(save); else showMenu(); };
+$('startBtn').onclick = () => begin();
+$('againBtn').onclick = () => begin();
 $('resumeBtn').onclick = togglePause;
+$('quitBtn').onclick = showMenu;
 $('pauseBtn').onclick = togglePause;
 document.addEventListener('visibilitychange', () => { if (document.hidden && S && S.state === 'play') togglePause(); });
-const best = parseInt(store('swarm-best') || '0', 10);
-$('bestTxt').textContent = best ? 'Best score: ' + best.toLocaleString() : '';
+showMenu();
 })();
 </script>

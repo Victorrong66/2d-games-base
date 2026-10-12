@@ -19,6 +19,7 @@ You pilot a small ship in a large arena while swarms of monsters close in. Your 
   - **Void Swirl** sprays spiral bullet streams
 
   Later boss stages send several bosses at once.
+- **Save file.** Your run saves itself in your browser at the start of every stage and when the upgrade screen opens. Close the tab or pick **Quit to menu** from the pause screen, and the start screen offers **Continue** from that point. Dying ends the run and clears the save.
 - **Best score** is saved in your browser.
 
 ## Controls
