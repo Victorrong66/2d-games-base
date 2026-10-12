@@ -1,0 +1,848 @@
+<title>Swarm Arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Chakra+Petch:wght@500;600;700&display=swap">
+<style>
+/* Layout: full-bleed canvas arena, thin HUD strip on top, modal panels centered over the play field. Single dark arcade look by choice. */
+:root {
+  --void: #0b0d1a;
+  --floor: #12152a;
+  --grid: #1d2244;
+  --ink: #e9ecff;
+  --muted: #8a90bd;
+  --hero: #3ef0d0;
+  --heat: #ff5a7a;
+  --gold: #ffc94a;
+  --violet: #a87bff;
+  --panel: rgba(14, 17, 36, 0.92);
+  --display: "Bungee", "Impact", "Arial Black", sans-serif;
+  --body: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--void); color: var(--ink); font-family: var(--body);
+  overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+}
+#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+.hud {
+  position: fixed; left: 0; right: 0; top: 0;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 0;
+  display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center;
+  pointer-events: none; font-variant-numeric: tabular-nums;
+}
+.hp { height: 12px; background: var(--grid); border-radius: 6px; overflow: hidden; border: 1px solid #2c3366; }
+.hp > i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--heat), var(--gold)); transition: width .15s; }
+.stats { display: flex; gap: 14px; flex-wrap: wrap; font-weight: 600; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.stats b { color: var(--ink); font-weight: 700; }
+.stage-tag { font-family: var(--display); font-size: 15px; color: var(--hero); letter-spacing: .04em; }
+#pauseBtn {
+  pointer-events: auto; grid-row: 1 / span 2; grid-column: 2;
+  width: 40px; height: 40px; border-radius: 10px; border: 1px solid #2c3366;
+  background: var(--panel); color: var(--ink); font: 700 14px var(--body); cursor: pointer;
+}
+.goal { height: 4px; background: var(--grid); border-radius: 2px; overflow: hidden; grid-column: 1; }
+.goal > i { display: block; height: 100%; width: 0; background: var(--hero); transition: width .15s; }
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
+  background: rgba(6, 7, 16, 0.62);
+}
+.card {
+  width: min(460px, 100%); background: var(--panel); border: 1px solid #2c3366; border-radius: 16px;
+  padding: 24px 20px; display: grid; gap: 14px; text-align: center;
+}
+.card h1, .card h2 { margin: 0; font-family: var(--display); font-weight: 400; text-wrap: balance; }
+.card h1 { font-size: clamp(30px, 9vw, 46px); line-height: 1; color: var(--hero); text-shadow: 0 0 18px rgba(62,240,208,.35); }
+.card h2 { font-size: 26px; color: var(--gold); }
+.card p { margin: 0; color: var(--muted); line-height: 1.5; font-size: 15px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; text-align: left; font-size: 14px; color: var(--muted); }
+.keys b { color: var(--ink); font-weight: 600; }
+.btn {
+  font: 700 16px var(--body); letter-spacing: .08em; text-transform: uppercase;
+  padding: 14px 18px; border-radius: 12px; border: 0; cursor: pointer;
+  background: var(--hero); color: var(--void);
+}
+.btn:focus-visible, .pick:focus-visible, #pauseBtn:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.picks { display: grid; gap: 10px; }
+.pick {
+  display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; text-align: left;
+  padding: 12px 14px; border-radius: 12px; border: 1px solid #2c3366; background: #161a36; color: var(--ink);
+  font: 500 14px var(--body); cursor: pointer;
+}
+.pick:hover { border-color: var(--hero); }
+.pick .ic { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; font: 400 18px var(--display); }
+.pick strong { display: block; font-size: 16px; font-weight: 700; }
+.pick span { color: var(--muted); }
+.pick em { font-style: normal; color: var(--gold); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.final { display: flex; justify-content: center; gap: 22px; font-variant-numeric: tabular-nums; }
+.final div { display: grid; gap: 2px; }
+.final b { font: 400 26px var(--display); color: var(--ink); }
+.final small { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
+.banner {
+  position: fixed; left: 0; right: 0; top: 34%; text-align: center; pointer-events: none;
+  font: 400 clamp(28px, 8vw, 52px) var(--display); color: var(--gold); text-shadow: 0 0 22px rgba(255,201,74,.4);
+  opacity: 0; transition: opacity .3s;
+}
+.banner.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .hp > i, .goal > i, .banner { transition: none; } }
+</style>
+
+<canvas id="game" aria-label="Arena play field"></canvas>
+
+<div class="hud">
+  <div class="hp" aria-label="Health"><i id="hpBar"></i></div>
+  <button id="pauseBtn" aria-label="Pause">II</button>
+  <div class="stats">
+    <span class="stage-tag" id="stageTag">Stage 1</span>
+    <span>Kills <b id="killTxt">0/25</b></span>
+    <span>Score <b id="scoreTxt">0</b></span>
+  </div>
+  <div class="goal"><i id="goalBar"></i></div>
+</div>
+<div class="banner" id="banner"></div>
+
+<div class="overlay" id="startScreen">
+  <div class="card">
+    <h1>Swarm Arena</h1>
+    <p>You fire automatically at the closest monster. Keep moving, clear each stage's kill goal, and pick an upgrade between stages. Every 5th stage brings a boss blob, and later ones bring several at once.</p>
+    <div class="keys">
+      <b>Phone</b><span>Touch and drag anywhere to steer</span>
+      <b>Keyboard</b><span>WASD or arrow keys, P to pause</span>
+    </div>
+    <button class="btn" id="startBtn">Start run</button>
+    <p id="bestTxt"></p>
+  </div>
+</div>
+
+<div class="overlay" id="upgradeScreen" hidden>
+  <div class="card">
+    <h2 id="clearTitle">Stage 1 cleared</h2>
+    <p>Choose one upgrade. You also recover 25% health.</p>
+    <div class="picks" id="picks"></div>
+  </div>
+</div>
+
+<div class="overlay" id="pauseScreen" hidden>
+  <div class="card">
+    <h2>Paused</h2>
+    <button class="btn" id="resumeBtn">Resume</button>
+  </div>
+</div>
+
+<div class="overlay" id="overScreen" hidden>
+  <div class="card">
+    <h2 style="color:var(--heat)">You were overrun</h2>
+    <div class="final">
+      <div><b id="fStage">1</b><small>Stage</small></div>
+      <div><b id="fKills">0</b><small>Kills</small></div>
+      <div><b id="fScore">0</b><small>Score</small></div>
+    </div>
+    <p id="fBest"></p>
+    <button class="btn" id="againBtn">Play again</button>
+  </div>
+</div>
+
+<script>
+(() => {
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const C = { hero:'#3ef0d0', heat:'#ff5a7a', gold:'#ffc94a', violet:'#a87bff', floor:'#12152a', grid:'#1d2244', edge:'#3a4290', ink:'#e9ecff', orange:'#ff9a3c', lime:'#9cff5a' };
+const ARENA = 2200;
+const SHIELD_R = 36, SHIELD_TIME = 8;
+
+let vw = 0, vh = 0, dpr = 1;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  vw = window.innerWidth; vh = window.innerHeight;
+  cv.width = vw * dpr; cv.height = vh * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+
+// ---------- Input ----------
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key.toLowerCase() === 'p' || e.key === 'Escape') togglePause();
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+const stick = { active:false, id:null, ox:0, oy:0, x:0, y:0 };
+cv.addEventListener('pointerdown', e => {
+  if (stick.active) return;
+  stick.active = true; stick.id = e.pointerId; stick.ox = stick.x = e.clientX; stick.oy = stick.y = e.clientY;
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener('pointermove', e => { if (stick.active && e.pointerId === stick.id) { stick.x = e.clientX; stick.y = e.clientY; } });
+const endStick = e => { if (e.pointerId === stick.id) { stick.active = false; stick.id = null; } };
+cv.addEventListener('pointerup', endStick); cv.addEventListener('pointercancel', endStick);
+// Stop phones from treating repeat taps / long presses as zoom, text-select or the magnifier loupe
+const block = e => e.preventDefault();
+['touchstart', 'touchmove', 'touchend', 'dblclick', 'contextmenu', 'gesturestart'].forEach(t => cv.addEventListener(t, block, { passive: false }));
+document.addEventListener('selectstart', block);
+document.addEventListener('dblclick', block, { passive: false });
+
+// ---------- State ----------
+let S;
+function newRun() {
+  S = {
+    state: 'play', t: 0, stage: 1, kills: 0, stageKills: 0, score: 0,
+    shake: 0, spawnTimer: 0, bossAlive: false,
+    p: { x: ARENA/2, y: ARENA/2, r: 14, hp: 100, maxHp: 100, speed: 230, aim: 0,
+         fireRate: 3, fireCd: 0, dmg: 10, bulletSpeed: 560, shots: 1, pierce: 0,
+         orbit: 0, orbitAng: 0, nova: 0, novaCd: 0, magnet: 0, iframe: 0, regen: 0, shield: 0 },
+    enemies: [], bullets: [], ebullets: [], particles: [], pickups: [], rings: [], texts: [],
+    up: {}
+  };
+  startStage();
+}
+function isBossStage(n) { return n % 5 === 0; }
+function goalFor(n) { return isBossStage(n) ? 1 : 20 + n * 8; }
+function startStage() {
+  S.stageKills = 0; S.spawnTimer = 0.5; S.bossAlive = false; S.bossSpawned = false;
+  S.ebullets.length = 0;
+  if (isBossStage(S.stage)) {
+    const n = bossCount(S.stage);
+    showBanner(n > 1 ? n + ' bosses incoming' : 'Boss incoming');
+    S.bossTimer = 1.2;
+  } else showBanner('Stage ' + S.stage);
+  updateHud();
+}
+let bannerTO;
+function showBanner(txt) {
+  const b = $('banner'); b.textContent = txt; b.classList.add('show');
+  clearTimeout(bannerTO); bannerTO = setTimeout(() => b.classList.remove('show'), 1400);
+}
+
+// ---------- Enemies ----------
+const TYPES = {
+  grunt:   { r: 13, hp: 20, speed: 95,  dmg: 10, color: C.heat,   score: 10 },
+  runner:  { r: 10, hp: 12, speed: 170, dmg: 8,  color: C.orange, score: 12 },
+  brute:   { r: 24, hp: 90, speed: 60,  dmg: 20, color: C.violet, score: 30 },
+  spitter: { r: 14, hp: 28, speed: 80,  dmg: 8,  color: C.lime,   score: 20 },
+};
+function pickType() {
+  const s = S.stage, roll = Math.random();
+  if (s >= 3 && roll < 0.12 + Math.min(s, 15) * 0.006) return 'spitter';
+  if (s >= 2 && roll < 0.3) return 'runner';
+  if (s >= 4 && roll < 0.42) return 'brute';
+  return 'grunt';
+}
+function spawnPoint() {
+  const a = Math.random() * Math.PI * 2;
+  const d = Math.max(vw, vh) * 0.6 + 60;
+  let x = S.p.x + Math.cos(a) * d, y = S.p.y + Math.sin(a) * d;
+  x = Math.max(30, Math.min(ARENA - 30, x)); y = Math.max(30, Math.min(ARENA - 30, y));
+  return { x, y };
+}
+function spawnEnemy() {
+  const k = pickType(), T = TYPES[k], pt = spawnPoint();
+  const scale = 1 + (S.stage - 1) * 0.14;
+  S.enemies.push({ kind: k, x: pt.x, y: pt.y, r: T.r, hp: T.hp * scale, maxHp: T.hp * scale,
+    speed: T.speed * (1 + Math.min(S.stage, 20) * 0.015), dmg: T.dmg, color: T.color, score: T.score,
+    flash: 0, shootCd: 1.5 + Math.random() * 2, hitCd: {} , wob: Math.random() * 6 });
+}
+// Boss blobs: each one moves and attacks differently
+const BOSSES = {
+  queen:    { name: 'Hive Queen',    color: C.gold,   r: 46, hpMul: 1.0,  speed: 70 },  // rings of bullets
+  splitter: { name: 'Gloop Splitter', color: C.lime,   r: 50, hpMul: 0.7,  speed: 60 },  // splits into smaller blobs
+  charger:  { name: 'Rage Blob',     color: C.heat,   r: 40, hpMul: 0.85, speed: 55 },  // winds up, then dashes
+  spiral:   { name: 'Void Swirl',    color: C.violet, r: 44, hpMul: 0.9,  speed: 50 },  // spiral bullet streams
+};
+const BOSS_ORDER = ['queen', 'splitter', 'charger', 'spiral'];
+function bossCount(stage) { const tier = stage / 5; return tier <= 2 ? 1 : tier <= 4 ? 2 : 3; }
+function makeBoss(type, x, y, hp, r, gen) {
+  const B = BOSSES[type], tier = S.stage / 5;
+  return { kind: 'boss', btype: type, name: gen ? 'Splitter shard' : B.name, gen: gen || 0,
+    x, y, r, hp, maxHp: hp, speed: (B.speed + tier * 6) * (1 + (gen || 0) * 0.35), dmg: 25 - (gen || 0) * 6,
+    color: B.color, score: Math.round(500 * tier / (1 + (gen || 0) * 2)), flash: 0, hitCd: {}, wob: Math.random() * 6,
+    shootCd: 1.5 + Math.random(), phase: 'move', phaseT: 2 + Math.random(), dashX: 0, dashY: 0, spin: 0 };
+}
+function spawnBoss() {
+  const tier = S.stage / 5, n = bossCount(S.stage);
+  const baseHp = 600 * tier * (1 + tier * 0.3) / (n === 1 ? 1 : n * 0.75);
+  for (let i = 0; i < n; i++) {
+    const type = BOSS_ORDER[(tier - 1 + i) % BOSS_ORDER.length], B = BOSSES[type], pt = spawnPoint();
+    S.enemies.push(makeBoss(type, pt.x, pt.y, baseHp * B.hpMul, B.r, 0));
+  }
+  S.bossAlive = true; S.bossSpawned = true;
+}
+function splitBoss(e) {
+  if (e.btype !== 'splitter' || e.gen >= 2) return;
+  for (let i = 0; i < 2; i++) {
+    const a = Math.random() * Math.PI * 2;
+    S.enemies.push(makeBoss('splitter', e.x + Math.cos(a) * e.r * 0.5, e.y + Math.sin(a) * e.r * 0.5, e.maxHp * 0.45, e.r * 0.68, e.gen + 1));
+  }
+}
+
+// ---------- Upgrades ----------
+const UPGRADES = [
+  { id:'rate',   name:'Rapid fire',     desc:'Shoot 25% faster',              ic:'»', col:C.hero,   apply:p => p.fireRate *= 1.25 },
+  { id:'dmg',    name:'Heavy rounds',   desc:'+35% bullet damage',            ic:'◆', col:C.heat,   apply:p => p.dmg *= 1.35 },
+  { id:'shots',  name:'Split shot',     desc:'+1 bullet per volley',          ic:'⋔', col:C.gold,   max:6, apply:p => p.shots += 1 },
+  { id:'pierce', name:'Piercing',       desc:'Bullets pass through +1 enemy', ic:'↣', col:C.violet, max:5, apply:p => p.pierce += 1 },
+  { id:'speed',  name:'Swift boots',    desc:'Move 12% faster',               ic:'≫', col:C.lime,   max:6, apply:p => p.speed *= 1.12 },
+  { id:'hp',     name:'Vital core',     desc:'+30 max health, fully healed',  ic:'+', col:C.heat,   apply:p => { p.maxHp += 30; p.hp = p.maxHp; } },
+  { id:'orbit',  name:'Orbit blades',   desc:'A blade circles you, cutting enemies', ic:'✦', col:C.hero, max:6, apply:p => p.orbit += 1 },
+  { id:'nova',   name:'Shockwave',      desc:'Periodic blast around you (stacks: bigger, faster)', ic:'◎', col:C.gold, max:5, apply:p => p.nova += 1 },
+  { id:'magnet', name:'Medkit magnet',  desc:'Pull health drops from farther away', ic:'∪', col:C.lime, max:3, apply:p => p.magnet += 1 },
+  { id:'regen',  name:'Nano repair',    desc:'Regenerate 1 health per second', ic:'♺', col:C.hero, max:4, apply:p => p.regen += 1 },
+];
+function offerUpgrades() {
+  S.state = 'upgrade';
+  const pool = UPGRADES.filter(u => !u.max || (S.up[u.id] || 0) < u.max);
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  const box = $('picks'); box.innerHTML = '';
+  pool.slice(0, 3).forEach(u => {
+    const lv = (S.up[u.id] || 0) + 1;
+    const b = document.createElement('button');
+    b.className = 'pick';
+    b.innerHTML = `<div class="ic" style="background:${u.col}22;color:${u.col}">${u.ic}</div><div><em>Level ${lv}</em><strong>${u.name}</strong><span>${u.desc}</span></div>`;
+    b.onclick = () => {
+      u.apply(S.p); S.up[u.id] = lv;
+      S.p.hp = Math.min(S.p.maxHp, S.p.hp + S.p.maxHp * 0.25);
+      $('upgradeScreen').hidden = true;
+      S.stage++; S.state = 'play'; startStage();
+    };
+    box.appendChild(b);
+  });
+  $('clearTitle').textContent = 'Stage ' + S.stage + ' cleared';
+  $('upgradeScreen').hidden = false;
+  setTimeout(() => { const f = box.querySelector('button'); if (f) f.focus({ preventScroll: true }); }, 50);
+}
+
+// ---------- Helpers ----------
+function burst(x, y, color, n, spd) {
+  if (S.particles.length > 600) return;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = (0.3 + Math.random()) * spd;
+    S.particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.4 + Math.random() * 0.4, max: 0.8, color, s: 2 + Math.random() * 3 });
+  }
+}
+function damageEnemy(e, dmg) {
+  e.hp -= dmg; e.flash = 0.08;
+  if (e.hp <= 0 && !e.dead) {
+    e.dead = true;
+    S.kills++; S.score += e.score;
+    if (e.kind === 'boss') {
+      S.shake = Math.max(S.shake, e.gen ? 8 : 18); burst(e.x, e.y, e.color, e.gen ? 25 : 60, 380);
+      splitBoss(e);
+      if (e.gen === 0) {
+        for (let i = 0; i < 3; i++) S.pickups.push({ kind: 'health', x: e.x + (Math.random()-0.5)*80, y: e.y + (Math.random()-0.5)*80, r: 9, t: 0 });
+        S.pickups.push({ kind: 'shield', x: e.x, y: e.y, r: 10, t: 0 });
+      } else if (Math.random() < 0.3) S.pickups.push({ kind: 'health', x: e.x, y: e.y, r: 9, t: 0 });
+    } else {
+      S.stageKills++; burst(e.x, e.y, e.color, 10, 200);
+      const roll = Math.random();
+      if (roll < 0.04) S.pickups.push({ kind: 'health', x: e.x, y: e.y, r: 9, t: 0 });
+      else if (roll < 0.06) S.pickups.push({ kind: 'shield', x: e.x, y: e.y, r: 10, t: 0 });
+    }
+  }
+}
+function hurtPlayer(dmg) {
+  const p = S.p;
+  if (p.iframe > 0 || p.shield > 0) return;
+  p.hp -= dmg; p.iframe = 0.6; S.shake = Math.max(S.shake, 8);
+  burst(p.x, p.y, C.heat, 12, 220);
+  if (p.hp <= 0) gameOver();
+}
+
+// ---------- Update ----------
+function update(dt) {
+  const p = S.p;
+  S.t += dt;
+
+  // Movement
+  let mx = 0, my = 0;
+  if (keys['a'] || keys['arrowleft']) mx -= 1;
+  if (keys['d'] || keys['arrowright']) mx += 1;
+  if (keys['w'] || keys['arrowup']) my -= 1;
+  if (keys['s'] || keys['arrowdown']) my += 1;
+  if (stick.active) {
+    const dx = stick.x - stick.ox, dy = stick.y - stick.oy, d = Math.hypot(dx, dy);
+    if (d > 6) { const m = Math.min(1, d / 50); mx = dx / d * m; my = dy / d * m; }
+  }
+  const ml = Math.hypot(mx, my);
+  if (ml > 1) { mx /= ml; my /= ml; }
+  p.x = Math.max(p.r, Math.min(ARENA - p.r, p.x + mx * p.speed * dt));
+  p.y = Math.max(p.r, Math.min(ARENA - p.r, p.y + my * p.speed * dt));
+  p.iframe = Math.max(0, p.iframe - dt);
+  if (p.regen) p.hp = Math.min(p.maxHp, p.hp + p.regen * dt);
+
+  // Spawning
+  const goal = goalFor(S.stage);
+  if (!isBossStage(S.stage)) {
+    const remaining = goal - S.stageKills - S.enemies.length;
+    S.spawnTimer -= dt;
+    const rate = Math.max(0.12, 0.9 - S.stage * 0.06);
+    const cap = 18 + S.stage * 5;
+    if (S.spawnTimer <= 0 && remaining > 0 && S.enemies.length < cap) {
+      const pack = Math.min(remaining, 1 + Math.floor(Math.random() * (1 + S.stage / 3)));
+      for (let i = 0; i < pack; i++) spawnEnemy();
+      S.spawnTimer = rate;
+    }
+  } else if (S.bossTimer > 0) {
+    S.bossTimer -= dt;
+    if (S.bossTimer <= 0) spawnBoss();
+  } else if (S.bossAlive) {
+    S.spawnTimer -= dt;
+    if (S.spawnTimer <= 0 && S.enemies.length < 14) { spawnEnemy(); S.spawnTimer = 1.6; }
+  }
+
+  // Auto aim + fire
+  let target = null, best = 650 * 650;
+  for (const e of S.enemies) { const d = (e.x - p.x) ** 2 + (e.y - p.y) ** 2; if (d < best) { best = d; target = e; } }
+  if (target) p.aim = Math.atan2(target.y - p.y, target.x - p.x);
+  else if (ml > 0) p.aim = Math.atan2(my, mx);
+  p.fireCd -= dt;
+  if (target && p.fireCd <= 0) {
+    p.fireCd = 1 / p.fireRate;
+    const spread = 0.13;
+    for (let i = 0; i < p.shots; i++) {
+      const a = p.aim + (i - (p.shots - 1) / 2) * spread;
+      S.bullets.push({ x: p.x + Math.cos(a) * 16, y: p.y + Math.sin(a) * 16, vx: Math.cos(a) * p.bulletSpeed, vy: Math.sin(a) * p.bulletSpeed, life: 1.3, pierce: p.pierce, hit: new Set() });
+    }
+  }
+
+  // Bullets
+  for (const b of S.bullets) {
+    b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+    for (const e of S.enemies) {
+      if (e.dead || b.hit.has(e)) continue;
+      if ((e.x - b.x) ** 2 + (e.y - b.y) ** 2 < (e.r + 4) ** 2) {
+        damageEnemy(e, p.dmg); b.hit.add(e);
+        burst(b.x, b.y, C.ink, 3, 120);
+        if (b.pierce-- <= 0) { b.life = 0; break; }
+      }
+    }
+  }
+  S.bullets = S.bullets.filter(b => b.life > 0 && b.x > -50 && b.y > -50 && b.x < ARENA + 50 && b.y < ARENA + 50);
+
+  // Orbit blades
+  if (p.orbit) {
+    p.orbitAng += dt * 3.2;
+    for (let i = 0; i < p.orbit; i++) {
+      const a = p.orbitAng + i * Math.PI * 2 / p.orbit;
+      const bx = p.x + Math.cos(a) * 72, by = p.y + Math.sin(a) * 72;
+      for (const e of S.enemies) {
+        if (e.dead) continue;
+        if ((e.x - bx) ** 2 + (e.y - by) ** 2 < (e.r + 10) ** 2) {
+          const key = 'o' + i;
+          if (!e.hitCd[key] || e.hitCd[key] <= S.t) { damageEnemy(e, 14 + p.dmg * 0.6); e.hitCd[key] = S.t + 0.35; }
+        }
+      }
+    }
+  }
+
+  // Shockwave
+  if (p.nova) {
+    p.novaCd -= dt;
+    if (p.novaCd <= 0) {
+      p.novaCd = Math.max(1.6, 5 - p.nova * 0.6);
+      const R = 120 + p.nova * 25;
+      S.rings.push({ x: p.x, y: p.y, r: 10, max: R, life: 0.35 });
+      for (const e of S.enemies) {
+        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        if (d < R + e.r) {
+          damageEnemy(e, 20 + p.nova * 10);
+          if (e.kind !== 'boss' && d > 0) { e.x += (e.x - p.x) / d * 40; e.y += (e.y - p.y) / d * 40; }
+        }
+      }
+    }
+  }
+
+  // Enemies
+  for (const e of S.enemies) {
+    if (e.dead) continue;
+    e.flash = Math.max(0, e.flash - dt);
+    const dx = p.x - e.x, dy = p.y - e.y, d = Math.hypot(dx, dy) || 1;
+    let sp = e.speed;
+    if (e.kind === 'spitter') {
+      if (d < 260) sp = -e.speed * 0.6; else if (d < 340) sp = 0;
+      e.shootCd -= dt;
+      if (e.shootCd <= 0 && d < 520) {
+        e.shootCd = 2.2;
+        S.ebullets.push({ x: e.x, y: e.y, vx: dx / d * 240, vy: dy / d * 240, life: 3, r: 6, dmg: 8 });
+      }
+    }
+    if (e.kind === 'boss') {
+      const tier = S.stage / 5;
+      if (e.btype === 'queen') {
+        e.shootCd -= dt;
+        if (e.shootCd <= 0) {
+          e.shootCd = Math.max(1.4, 3 - S.stage * 0.05);
+          const n = 14 + Math.floor(tier) * 4, off = Math.random();
+          for (let i = 0; i < n; i++) {
+            const a = off + i * Math.PI * 2 / n;
+            S.ebullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 200, vy: Math.sin(a) * 200, life: 4, r: 7, dmg: 12 });
+          }
+        }
+      } else if (e.btype === 'splitter') {
+        // lobs a slow 3-shot spread; shards shoot less often
+        e.shootCd -= dt;
+        if (e.shootCd <= 0 && d < 600) {
+          e.shootCd = 2.4 + e.gen;
+          const base = Math.atan2(dy, dx);
+          for (let i = -1; i <= 1; i++) { const a = base + i * 0.3; S.ebullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 170, vy: Math.sin(a) * 170, life: 4, r: 8 - e.gen * 2, dmg: 10 }); }
+        }
+      } else if (e.btype === 'charger') {
+        e.phaseT -= dt;
+        if (e.phase === 'move' && e.phaseT <= 0) { e.phase = 'wind'; e.phaseT = 0.75; e.dashX = dx / d; e.dashY = dy / d; }
+        else if (e.phase === 'wind') { sp = 0; e.dashX = dx / d; e.dashY = dy / d; if (e.phaseT <= 0) { e.phase = 'dash'; e.phaseT = 0.55; } }
+        else if (e.phase === 'dash') {
+          sp = 0; e.x += e.dashX * (620 + tier * 30) * dt; e.y += e.dashY * (620 + tier * 30) * dt;
+          if (Math.random() < 0.5) burst(e.x, e.y, e.color, 1, 60);
+          if (e.phaseT <= 0) {
+            e.phase = 'move'; e.phaseT = Math.max(1.4, 2.8 - tier * 0.2);
+            for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; S.ebullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 180, vy: Math.sin(a) * 180, life: 3, r: 7, dmg: 10 }); }
+          }
+        }
+      } else if (e.btype === 'spiral') {
+        e.phaseT -= dt; e.spin += dt * 2.6;
+        if (e.phase === 'move' && e.phaseT <= 0) { e.phase = 'fire'; e.phaseT = 2.4; }
+        else if (e.phase === 'fire') {
+          sp *= 0.3; e.shootCd -= dt;
+          if (e.shootCd <= 0) {
+            e.shootCd = 0.11;
+            const arms = 2 + Math.min(2, Math.floor(tier / 2));
+            for (let k = 0; k < arms; k++) { const a = e.spin + k * Math.PI * 2 / arms; S.ebullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, life: 4, r: 6, dmg: 9 }); }
+          }
+          if (e.phaseT <= 0) { e.phase = 'move'; e.phaseT = 2.2; }
+        }
+      }
+    }
+    e.wob += dt * 4;
+    e.x += dx / d * sp * dt + Math.cos(e.wob) * 10 * dt;
+    e.y += dy / d * sp * dt + Math.sin(e.wob) * 10 * dt;
+    e.x = Math.max(e.r, Math.min(ARENA - e.r, e.x)); e.y = Math.max(e.r, Math.min(ARENA - e.r, e.y));
+    if (d < e.r + p.r) hurtPlayer(e.dmg);
+  }
+  // Separation so mobs don't stack
+  const es = S.enemies;
+  for (let i = 0; i < es.length; i++) for (let j = i + 1; j < es.length; j++) {
+    const a = es[i], b = es[j], dx = b.x - a.x, dy = b.y - a.y, min = a.r + b.r;
+    const dd = dx * dx + dy * dy;
+    if (dd < min * min && dd > 0.01) {
+      const d = Math.sqrt(dd), push = (min - d) / 2, nx = dx / d, ny = dy / d;
+      const wa = a.kind === 'boss' ? 0.1 : 1, wb = b.kind === 'boss' ? 0.1 : 1;
+      a.x -= nx * push * wa; a.y -= ny * push * wa; b.x += nx * push * wb; b.y += ny * push * wb;
+    }
+  }
+  S.enemies = S.enemies.filter(e => !e.dead);
+
+  // Enemy bullets
+  p.shield = Math.max(0, p.shield - dt);
+  for (const b of S.ebullets) {
+    b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+    const d2 = (b.x - p.x) ** 2 + (b.y - p.y) ** 2;
+    if (p.shield > 0 && d2 < (SHIELD_R + b.r) ** 2) {
+      // Deflect: send the shot back out as one of your own bullets
+      const d = Math.sqrt(d2) || 1, sp = Math.hypot(b.vx, b.vy) * 1.6;
+      S.bullets.push({ x: b.x, y: b.y, vx: (b.x - p.x) / d * sp, vy: (b.y - p.y) / d * sp, life: 1.5, pierce: 1, hit: new Set(), reflected: true });
+      burst(b.x, b.y, C.hero, 6, 160);
+      b.life = 0;
+    } else if (d2 < (b.r + p.r) ** 2) { hurtPlayer(b.dmg); b.life = 0; }
+  }
+  S.ebullets = S.ebullets.filter(b => b.life > 0);
+  // Shield shoves enemies that touch it
+  if (p.shield > 0) for (const e of S.enemies) {
+    const dx = e.x - p.x, dy = e.y - p.y, d = Math.hypot(dx, dy) || 1;
+    if (d < SHIELD_R + e.r) {
+      // Hold enemies at the shield's edge; small mobs get knocked a bit further
+      const edge = SHIELD_R + e.r + (e.kind === 'boss' ? 0 : 14);
+      e.x = p.x + dx / d * edge; e.y = p.y + dy / d * edge;
+    }
+  }
+
+  // Pickups
+  const pull = 60 + p.magnet * 90;
+  for (const k of S.pickups) {
+    k.t += dt;
+    const dx = p.x - k.x, dy = p.y - k.y, d = Math.hypot(dx, dy);
+    if (d < pull && d > 0) { k.x += dx / d * 320 * dt; k.y += dy / d * 320 * dt; }
+    if (d < p.r + k.r) {
+      k.got = true;
+      if (k.kind === 'shield') { p.shield = SHIELD_TIME; S.texts.push({ x: p.x, y: p.y - 20, txt: 'Shield!', life: 0.9, color: C.hero }); }
+      else { p.hp = Math.min(p.maxHp, p.hp + 20); S.texts.push({ x: p.x, y: p.y - 20, txt: '+20', life: 0.8, color: C.lime }); }
+    }
+  }
+  S.pickups = S.pickups.filter(k => !k.got && k.t < 20);
+
+  // FX
+  for (const q of S.particles) { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.92; q.vy *= 0.92; q.life -= dt; }
+  S.particles = S.particles.filter(q => q.life > 0);
+  for (const r of S.rings) { r.life -= dt; r.r += (r.max - r.r) * Math.min(1, dt * 14); }
+  S.rings = S.rings.filter(r => r.life > 0);
+  for (const t of S.texts) { t.life -= dt; t.y -= 30 * dt; }
+  S.texts = S.texts.filter(t => t.life > 0);
+  S.shake = Math.max(0, S.shake - dt * 40);
+
+  // Stage clear
+  if (isBossStage(S.stage) && S.bossSpawned) {
+    S.bossAlive = S.enemies.some(e => e.kind === 'boss');
+    if (!S.bossAlive) S.stageKills = goal;
+  }
+  if (S.stageKills >= goal && S.enemies.length === 0 && !S.bossAlive) { offerUpgrades(); }
+  updateHud();
+}
+
+// ---------- Draw ----------
+function draw() {
+  const p = S.p;
+  const sh = reduceMotion ? 0 : S.shake;
+  const cx = p.x - vw / 2 + (Math.random() - 0.5) * sh, cy = p.y - vh / 2 + (Math.random() - 0.5) * sh;
+  ctx.fillStyle = '#0b0d1a'; ctx.fillRect(0, 0, vw, vh);
+  ctx.save(); ctx.translate(-cx, -cy);
+
+  // Floor + grid
+  ctx.fillStyle = C.floor; ctx.fillRect(0, 0, ARENA, ARENA);
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.beginPath();
+  const g = 80, x0 = Math.max(0, Math.floor(cx / g) * g), y0 = Math.max(0, Math.floor(cy / g) * g);
+  for (let x = x0; x <= Math.min(ARENA, cx + vw); x += g) { ctx.moveTo(x, Math.max(0, cy)); ctx.lineTo(x, Math.min(ARENA, cy + vh)); }
+  for (let y = y0; y <= Math.min(ARENA, cy + vh); y += g) { ctx.moveTo(Math.max(0, cx), y); ctx.lineTo(Math.min(ARENA, cx + vw), y); }
+  ctx.stroke();
+  ctx.strokeStyle = C.edge; ctx.lineWidth = 4; ctx.strokeRect(0, 0, ARENA, ARENA);
+
+  // Pickups
+  for (const k of S.pickups) {
+    const s = 1 + Math.sin(k.t * 6) * 0.12;
+    if (k.t > 16 && Math.floor(k.t * 8) % 2) continue; // blink before vanishing
+    ctx.save(); ctx.translate(k.x, k.y); ctx.scale(s, s);
+    if (k.kind === 'shield') {
+      ctx.shadowColor = C.hero; ctx.shadowBlur = 12;
+      ctx.fillStyle = C.hero; ctx.beginPath();
+      ctx.moveTo(0, -11); ctx.lineTo(9, -7); ctx.lineTo(8, 3); ctx.quadraticCurveTo(5, 9, 0, 12); ctx.quadraticCurveTo(-5, 9, -8, 3); ctx.lineTo(-9, -7); ctx.closePath(); ctx.fill();
+      ctx.shadowBlur = 0; ctx.fillStyle = '#0b0d1a'; ctx.fillRect(-1.5, -6, 3, 11);
+    } else {
+      ctx.fillStyle = C.lime; ctx.fillRect(-3, -9, 6, 18); ctx.fillRect(-9, -3, 18, 6);
+    }
+    ctx.restore();
+  }
+
+  // Shock rings
+  for (const r of S.rings) {
+    ctx.strokeStyle = `rgba(255,201,74,${r.life / 0.35})`; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Enemies
+  for (const e of S.enemies) {
+    if (e.kind === 'boss') { drawBoss(e, p); continue; }
+    ctx.save(); ctx.translate(e.x, e.y);
+    ctx.fillStyle = e.flash > 0 ? '#ffffff' : e.color;
+    ctx.shadowColor = e.color; ctx.shadowBlur = 12;
+    ctx.beginPath();
+    if (e.kind === 'grunt') ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+    else if (e.kind === 'runner') { const a = Math.atan2(p.y - e.y, p.x - e.x); ctx.rotate(a); ctx.moveTo(e.r + 4, 0); ctx.lineTo(-e.r, e.r); ctx.lineTo(-e.r * 0.4, 0); ctx.lineTo(-e.r, -e.r); ctx.closePath(); }
+    else if (e.kind === 'brute') { ctx.rotate(e.wob * 0.15); ctx.rect(-e.r, -e.r, e.r * 2, e.r * 2); }
+    else if (e.kind === 'spitter') { for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + e.wob * 0.2; ctx.lineTo(Math.cos(a) * e.r, Math.sin(a) * e.r); } ctx.closePath(); }
+    else { for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8 + e.wob * 0.1, rr = i % 2 ? e.r * 0.78 : e.r; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } ctx.closePath(); }
+    ctx.fill(); ctx.shadowBlur = 0;
+    // eyes
+    if (e.kind !== 'runner') { ctx.fillStyle = '#0b0d1a'; const a = Math.atan2(p.y - e.y, p.x - e.x), o = e.r * 0.35; ctx.beginPath(); ctx.arc(Math.cos(a) * o - Math.sin(a) * o * 0.6, Math.sin(a) * o + Math.cos(a) * o * 0.6, e.r * 0.16, 0, 7); ctx.arc(Math.cos(a) * o + Math.sin(a) * o * 0.6, Math.sin(a) * o - Math.cos(a) * o * 0.6, e.r * 0.16, 0, 7); ctx.fill(); }
+    ctx.restore();
+    if (e.hp < e.maxHp && e.kind !== 'boss') {
+      ctx.fillStyle = '#000a'; ctx.fillRect(e.x - e.r, e.y - e.r - 9, e.r * 2, 4);
+      ctx.fillStyle = e.color; ctx.fillRect(e.x - e.r, e.y - e.r - 9, e.r * 2 * Math.max(0, e.hp / e.maxHp), 4);
+    }
+  }
+
+  // Bullets
+  ctx.fillStyle = C.hero; ctx.shadowColor = C.hero; ctx.shadowBlur = 10;
+  for (const b of S.bullets) { ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = C.heat; ctx.shadowColor = C.heat;
+  for (const b of S.ebullets) { ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); }
+  ctx.shadowBlur = 0;
+
+  // Orbit blades
+  for (let i = 0; i < p.orbit; i++) {
+    const a = p.orbitAng + i * Math.PI * 2 / p.orbit;
+    ctx.save(); ctx.translate(p.x + Math.cos(a) * 72, p.y + Math.sin(a) * 72); ctx.rotate(a * 3);
+    ctx.fillStyle = C.hero; ctx.beginPath();
+    for (let k = 0; k < 8; k++) { const aa = k * Math.PI / 4, rr = k % 2 ? 4 : 11; ctx.lineTo(Math.cos(aa) * rr, Math.sin(aa) * rr); }
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+
+  // Player
+  if (!(p.iframe > 0 && Math.floor(S.t * 20) % 2)) {
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.aim);
+    ctx.shadowColor = C.hero; ctx.shadowBlur = 16; ctx.fillStyle = C.hero;
+    ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(-12, 13); ctx.lineTo(-6, 0); ctx.lineTo(-12, -13); ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0; ctx.fillStyle = '#0b0d1a'; ctx.beginPath(); ctx.arc(2, 0, 4, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+  // Deflection shield bubble (flickers in its last 2 seconds)
+  if (p.shield > 0 && !(p.shield < 2 && Math.floor(S.t * 10) % 2)) {
+    const pulse = reduceMotion ? 0 : Math.sin(S.t * 8) * 2;
+    ctx.fillStyle = 'rgba(62,240,208,0.12)'; ctx.strokeStyle = C.hero; ctx.lineWidth = 2.5;
+    ctx.shadowColor = C.hero; ctx.shadowBlur = 14;
+    ctx.beginPath(); ctx.arc(p.x, p.y, SHIELD_R + pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // Particles + text
+  for (const q of S.particles) { ctx.globalAlpha = Math.max(0, q.life / q.max); ctx.fillStyle = q.color; ctx.fillRect(q.x - q.s / 2, q.y - q.s / 2, q.s, q.s); }
+  ctx.globalAlpha = 1;
+  ctx.font = '700 16px "Chakra Petch", sans-serif'; ctx.textAlign = 'center';
+  for (const t of S.texts) { ctx.globalAlpha = t.life / 0.8; ctx.fillStyle = t.color; ctx.fillText(t.txt, t.x, t.y); }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // Boss health bars (one per boss; splitter shards are grouped)
+  const groups = {};
+  for (const e of S.enemies) if (e.kind === 'boss') {
+    const g = groups[e.btype] || (groups[e.btype] = { name: BOSSES[e.btype].name, color: e.color, hp: 0, max: 0, n: 0 });
+    g.hp += Math.max(0, e.hp); g.max += e.maxHp; g.n++;
+  }
+  const list = Object.values(groups);
+  if (list.length) {
+    const padB = parseFloat(getComputedStyle(document.documentElement).paddingBottom) || 0;
+    const w = Math.min(vw - 32, 420), x = (vw - w) / 2;
+    ctx.font = '400 12px "Bungee", sans-serif'; ctx.textAlign = 'left';
+    list.forEach((g, i) => {
+      const y = vh - 22 - padB - (list.length - 1 - i) * 30;
+      ctx.fillStyle = '#1d2244'; ctx.fillRect(x, y, w, 9);
+      ctx.fillStyle = g.color; ctx.fillRect(x, y, w * Math.max(0, Math.min(1, g.hp / g.max)), 9);
+      ctx.fillText(g.name + (g.n > 1 ? ' · ' + g.n + ' pieces' : ''), x, y - 5);
+    });
+  }
+
+  // Off-screen enemy hints
+  for (const e of S.enemies) {
+    const sx = e.x - cx, sy = e.y - cy;
+    if (sx > -10 && sx < vw + 10 && sy > -10 && sy < vh + 10) continue;
+    const a = Math.atan2(sy - vh / 2, sx - vw / 2);
+    const hx = Math.max(10, Math.min(vw - 10, vw / 2 + Math.cos(a) * vw)), hy = Math.max(70, Math.min(vh - 10, vh / 2 + Math.sin(a) * vh));
+    ctx.fillStyle = e.color; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(hx, hy, e.kind === 'boss' ? 7 : 3, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Joystick
+  if (stick.active) {
+    ctx.strokeStyle = 'rgba(233,236,255,.25)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(stick.ox, stick.oy, 50, 0, 7); ctx.stroke();
+    const dx = stick.x - stick.ox, dy = stick.y - stick.oy, d = Math.hypot(dx, dy), m = Math.min(d, 50) / (d || 1);
+    ctx.fillStyle = 'rgba(62,240,208,.45)'; ctx.beginPath(); ctx.arc(stick.ox + dx * m, stick.oy + dy * m, 20, 0, 7); ctx.fill();
+  }
+}
+
+// Wobbly blob body with a per-boss feature
+function drawBoss(e, p) {
+  const t = S.t, wob = reduceMotion ? 0 : 1;
+  ctx.save(); ctx.translate(e.x, e.y);
+  // Charger telegraph: a line showing where it is about to dash
+  if (e.btype === 'charger' && e.phase === 'wind') {
+    ctx.strokeStyle = 'rgba(255,90,122,0.45)'; ctx.lineWidth = e.r * 0.9; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(e.dashX * 360, e.dashY * 360); ctx.stroke();
+    ctx.translate((Math.random() - 0.5) * 4 * wob, (Math.random() - 0.5) * 4 * wob);
+  }
+  const N = 28;
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const a = i / N * Math.PI * 2;
+    const rr = e.r * (1 + wob * (0.07 * Math.sin(a * 3 + t * 3 + e.wob) + 0.05 * Math.sin(a * 5 - t * 2.2)));
+    const x = Math.cos(a) * rr, y = Math.sin(a) * rr * (e.btype === 'splitter' ? 0.9 + 0.08 * Math.sin(t * 4) * wob : 1);
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+  ctx.shadowColor = e.color; ctx.shadowBlur = 22;
+  ctx.fillStyle = e.flash > 0 ? '#ffffff' : e.color; ctx.globalAlpha = 0.92; ctx.fill(); ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  // glossy highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.22)';
+  ctx.beginPath(); ctx.ellipse(-e.r * 0.35, -e.r * 0.42, e.r * 0.28, e.r * 0.16, -0.5, 0, 7); ctx.fill();
+
+  ctx.fillStyle = 'rgba(11,13,26,0.35)';
+  if (e.btype === 'splitter') {        // nuclei floating inside
+    for (let k = 0; k < 3 - e.gen; k++) { const a = t * 1.5 + k * 2.1; ctx.beginPath(); ctx.arc(Math.cos(a) * e.r * 0.45, Math.sin(a) * e.r * 0.45 + e.r * 0.15, e.r * 0.14, 0, 7); ctx.fill(); }
+  } else if (e.btype === 'spiral') {   // swirl
+    ctx.strokeStyle = 'rgba(11,13,26,0.45)'; ctx.lineWidth = 3; ctx.beginPath();
+    for (let k = 0; k < 40; k++) { const a = e.spin * 2 + k * 0.32, rr = k / 40 * e.r * 0.8; k ? ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : ctx.moveTo(0, 0); }
+    ctx.stroke();
+  } else if (e.btype === 'queen') {    // crown
+    ctx.fillStyle = C.gold; ctx.strokeStyle = '#0b0d1a'; ctx.lineWidth = 2;
+    ctx.beginPath(); const cy = -e.r * 1.02, cw = e.r * 0.7;
+    ctx.moveTo(-cw, cy); ctx.lineTo(-cw, cy - 16); ctx.lineTo(-cw / 2, cy - 6); ctx.lineTo(0, cy - 22); ctx.lineTo(cw / 2, cy - 6); ctx.lineTo(cw, cy - 16); ctx.lineTo(cw, cy); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+  }
+  // eyes look at the player
+  const a = Math.atan2(p.y - e.y, p.x - e.x), ex = Math.cos(a) * e.r * 0.12, ey = Math.sin(a) * e.r * 0.12;
+  for (const s of [-1, 1]) {
+    const x = s * e.r * 0.32, y = -e.r * 0.05;
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(x, y, e.r * 0.2, 0, 7); ctx.fill();
+    ctx.fillStyle = '#0b0d1a'; ctx.beginPath(); ctx.arc(x + ex, y + ey, e.r * 0.1, 0, 7); ctx.fill();
+  }
+  if (e.btype === 'charger') {         // angry brows
+    ctx.strokeStyle = '#0b0d1a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-e.r * 0.55, -e.r * 0.4); ctx.lineTo(-e.r * 0.15, -e.r * 0.25); ctx.moveTo(e.r * 0.55, -e.r * 0.4); ctx.lineTo(e.r * 0.15, -e.r * 0.25); ctx.stroke();
+  }
+  // mouth
+  ctx.strokeStyle = '#0b0d1a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath();
+  if (e.btype === 'charger') ctx.arc(0, e.r * 0.62, e.r * 0.22, 1.15 * Math.PI, 1.85 * Math.PI);
+  else ctx.arc(0, e.r * 0.3, e.r * 0.22, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ---------- HUD ----------
+function updateHud() {
+  const p = S.p, goal = goalFor(S.stage);
+  $('hpBar').style.width = Math.max(0, p.hp / p.maxHp * 100) + '%';
+  $('stageTag').textContent = (isBossStage(S.stage) ? 'Boss · ' : '') + 'Stage ' + S.stage;
+  $('killTxt').textContent = isBossStage(S.stage) ? (S.bossAlive ? 'Boss' : '—') : Math.min(S.stageKills, goal) + '/' + goal;
+  $('scoreTxt').textContent = S.score.toLocaleString();
+  $('goalBar').style.width = Math.min(100, S.stageKills / goal * 100) + '%';
+}
+
+function gameOver() {
+  S.state = 'over';
+  const best = parseInt(store('swarm-best') || '0', 10);
+  const isBest = S.score > best;
+  if (isBest) store('swarm-best', String(S.score));
+  $('fStage').textContent = S.stage; $('fKills').textContent = S.kills; $('fScore').textContent = S.score.toLocaleString();
+  $('fBest').textContent = isBest ? 'New best score.' : 'Best score: ' + best.toLocaleString();
+  $('overScreen').hidden = false;
+  $('againBtn').focus({ preventScroll: true });
+}
+function togglePause() {
+  if (!S) return;
+  if (S.state === 'play') { S.state = 'paused'; $('pauseScreen').hidden = false; }
+  else if (S.state === 'paused') { S.state = 'play'; $('pauseScreen').hidden = true; }
+}
+
+// ---------- Loop ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (S) { if (S.state === 'play') update(dt); draw(); }
+  else drawIdle(now / 1000);
+  requestAnimationFrame(frame);
+}
+function drawIdle(t) {
+  ctx.fillStyle = '#0b0d1a'; ctx.fillRect(0, 0, vw, vh);
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.beginPath();
+  const off = reduceMotion ? 0 : (t * 20) % 80;
+  for (let x = -off; x < vw; x += 80) { ctx.moveTo(x, 0); ctx.lineTo(x, vh); }
+  for (let y = -off; y < vh; y += 80) { ctx.moveTo(0, y); ctx.lineTo(vw, y); }
+  ctx.stroke();
+}
+requestAnimationFrame(frame);
+
+function begin() {
+  ['startScreen', 'overScreen', 'upgradeScreen', 'pauseScreen'].forEach(id => $(id).hidden = true);
+  newRun();
+}
+$('startBtn').onclick = begin;
+$('againBtn').onclick = begin;
+$('resumeBtn').onclick = togglePause;
+$('pauseBtn').onclick = togglePause;
+document.addEventListener('visibilitychange', () => { if (document.hidden && S && S.state === 'play') togglePause(); });
+const best = parseInt(store('swarm-best') || '0', 10);
+$('bestTxt').textContent = best ? 'Best score: ' + best.toLocaleString() : '';
+})();
+</script>
