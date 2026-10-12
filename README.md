@@ -2,7 +2,7 @@
 
 A top-down arena survival shooter that runs in a single HTML file. No build step, no dependencies: just a canvas and some JavaScript.
 
-**Play it:** https://victorrong66.github.io/swarm-arena/
+**Play it:** https://victorrong66.github.io/2d-games-base/
 
 ## The game
 
@@ -35,8 +35,8 @@ Shooting is automatic. The game also pauses itself when you switch tabs.
 Download or clone the repo and open `index.html` in any modern browser. That's it.
 
 ```sh
-git clone https://github.com/Victorrong66/swarm-arena.git
-cd swarm-arena
+git clone https://github.com/Victorrong66/2d-games-base.git
+cd 2d-games-base
 open index.html        # macOS; on Windows use `start index.html`, on Linux `xdg-open index.html`
 ```
 
