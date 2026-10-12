@@ -275,9 +275,12 @@ function spawnPoint() {
   x = Math.max(30, Math.min(ARENA - 30, x)); y = Math.max(30, Math.min(ARENA - 30, y));
   return { x, y };
 }
+// Monster health multiplier. The squared term makes it curve upward so it keeps pace with stacked upgrades:
+// stage 5 ≈ 2x, stage 10 ≈ 3.8x, stage 20 ≈ 9x, stage 30 ≈ 17x.
+function hpScale(stage) { const n = stage - 1; return 1 + n * 0.2 + n * n * 0.012; }
 function spawnEnemy() {
   const k = pickType(), T = TYPES[k], pt = spawnPoint();
-  const scale = 1 + (S.stage - 1) * 0.14;
+  const scale = hpScale(S.stage);
   S.enemies.push({ kind: k, x: pt.x, y: pt.y, r: T.r, hp: T.hp * scale, maxHp: T.hp * scale,
     speed: T.speed * (1 + Math.min(S.stage, 20) * 0.015), dmg: T.dmg, color: T.color, score: T.score,
     flash: 0, shootCd: 1.5 + Math.random() * 2, hitCd: {} , wob: Math.random() * 6 });
@@ -316,31 +319,34 @@ function splitBoss(e) {
 }
 
 // ---------- Upgrades ----------
+const UPGRADE_MAX = 5; // highest level any upgrade can reach
 const UPGRADES = [
   { id:'rate',   name:'Rapid fire',     desc:'Shoot 25% faster',              ic:'»', col:C.hero,   apply:p => p.fireRate *= 1.25 },
   { id:'dmg',    name:'Heavy rounds',   desc:'+35% bullet damage',            ic:'◆', col:C.heat,   apply:p => p.dmg *= 1.35 },
-  { id:'shots',  name:'Split shot',     desc:'+1 bullet per volley',          ic:'⋔', col:C.gold,   max:6, apply:p => p.shots += 1 },
-  { id:'pierce', name:'Piercing',       desc:'Bullets pass through +1 enemy', ic:'↣', col:C.violet, max:5, apply:p => p.pierce += 1 },
-  { id:'speed',  name:'Swift boots',    desc:'Move 12% faster',               ic:'≫', col:C.lime,   max:6, apply:p => p.speed *= 1.12 },
+  { id:'shots',  name:'Split shot',     desc:'+1 bullet per volley',          ic:'⋔', col:C.gold,   apply:p => p.shots += 1 },
+  { id:'pierce', name:'Piercing',       desc:'Bullets pass through +1 enemy', ic:'↣', col:C.violet, apply:p => p.pierce += 1 },
+  { id:'speed',  name:'Swift boots',    desc:'Move 12% faster',               ic:'≫', col:C.lime,   apply:p => p.speed *= 1.12 },
   { id:'hp',     name:'Vital core',     desc:'+30 max health, fully healed',  ic:'+', col:C.heat,   apply:p => { p.maxHp += 30; p.hp = p.maxHp; } },
-  { id:'orbit',  name:'Orbit blades',   desc:'A blade circles you, cutting enemies', ic:'✦', col:C.hero, max:6, apply:p => p.orbit += 1 },
-  { id:'nova',   name:'Shockwave',      desc:'Periodic blast around you (stacks: bigger, faster)', ic:'◎', col:C.gold, max:5, apply:p => p.nova += 1 },
-  { id:'magnet', name:'Medkit magnet',  desc:'Pull health drops from farther away', ic:'∪', col:C.lime, max:3, apply:p => p.magnet += 1 },
-  { id:'regen',  name:'Nano repair',    desc:'Regenerate 1 health per second', ic:'♺', col:C.hero, max:4, apply:p => p.regen += 1 },
+  { id:'orbit',  name:'Orbit blades',   desc:'A blade circles you, cutting enemies', ic:'✦', col:C.hero, apply:p => p.orbit += 1 },
+  { id:'nova',   name:'Shockwave',      desc:'Periodic blast around you (stacks: bigger, faster)', ic:'◎', col:C.gold, apply:p => p.nova += 1 },
+  { id:'magnet', name:'Medkit magnet',  desc:'Pull health drops from farther away', ic:'∪', col:C.lime, apply:p => p.magnet += 1 },
+  { id:'regen',  name:'Nano repair',    desc:'Regenerate 1 health per second', ic:'♺', col:C.hero, apply:p => p.regen += 1 },
 ];
 function offerUpgrades() {
   S.state = 'upgrade';
   saveRun(true);
-  const pool = UPGRADES.filter(u => !u.max || (S.up[u.id] || 0) < u.max);
+  let pool = UPGRADES.filter(u => (S.up[u.id] || 0) < UPGRADE_MAX);
+  // Everything maxed: offer a full heal so the run can keep going
+  if (!pool.length) pool = [{ id: 'patch', name: 'Patch up', desc: 'All upgrades maxed. Fully heal instead', ic: '+', col: C.lime, apply: p => { p.hp = p.maxHp; } }];
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const box = $('picks'); box.innerHTML = '';
   pool.slice(0, 3).forEach(u => {
     const lv = (S.up[u.id] || 0) + 1;
     const b = document.createElement('button');
     b.className = 'pick';
-    b.innerHTML = `<div class="ic" style="background:${u.col}22;color:${u.col}">${u.ic}</div><div><em>Level ${lv}</em><strong>${u.name}</strong><span>${u.desc}</span></div>`;
+    b.innerHTML = `<div class="ic" style="background:${u.col}22;color:${u.col}">${u.ic}</div><div><em>${u.id === 'patch' ? 'Maxed' : 'Level ' + lv + ' / ' + UPGRADE_MAX + (lv === UPGRADE_MAX ? ' · Max' : '')}</em><strong>${u.name}</strong><span>${u.desc}</span></div>`;
     b.onclick = () => {
-      u.apply(S.p); S.up[u.id] = lv;
+      u.apply(S.p); if (u.id !== 'patch') S.up[u.id] = lv;
       S.p.hp = Math.min(S.p.maxHp, S.p.hp + S.p.maxHp * 0.25);
       $('upgradeScreen').hidden = true;
       S.stage++; S.state = 'play'; startStage();

@@ -8,8 +8,8 @@ A top-down arena survival shooter that runs in a single HTML file. No build step
 
 You pilot a small ship in a large arena while swarms of monsters close in. Your ship **fires automatically** at the closest enemy, so all you have to do is move: dodge, kite, and stay alive.
 
-- **Stages.** Each stage has a kill goal. Clear it and the next, tougher stage begins.
-- **Upgrades.** Between stages you pick one of three upgrades (rapid fire, heavy rounds, split shot, piercing, orbit blades, shockwave, regen and more) and recover 25% health.
+- **Stages.** Each stage has a kill goal. Clear it and the next, tougher stage begins. Monsters get more health every stage, and the climb gets steeper the deeper you go.
+- **Upgrades.** Between stages you pick one of three upgrades (rapid fire, heavy rounds, split shot, piercing, orbit blades, shockwave, regen and more) and recover 25% health. Each upgrade goes up to **level 5**. Once everything is maxed, you get a full heal instead.
 - **Enemies.** Grunts, fast runners, tanky brutes, and spitters that shoot back.
 - **Drops.** Defeated enemies sometimes drop **health packs** (+20 HP) or a **shield**, which blocks damage for a few seconds, deflects enemy shots back as your own bullets, and shoves monsters away.
 - **Bosses.** Every 5th stage is a boss stage with four boss types, each with its own attack:
